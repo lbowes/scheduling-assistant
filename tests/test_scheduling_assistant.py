@@ -31,6 +31,12 @@ def test_calculate_action():
     future = calculate_action(current_time_spent, target_alloc)
     assert future == { "allocation": { "C": 1.0 }, "min_required_time": duration(hours=10) }
 
+    # Case 5
+    current_time_spent = { "A": duration(hours=1), "B": duration(hours=2), "C": duration(hours=3) }
+    target_alloc = { "B": 0.25, "C": 0.75 }
+    future = calculate_action(current_time_spent, target_alloc)
+    assert future == { "allocation": { "C": 1.0 }, "min_required_time": duration(hours=3) }
+
     # ==================== No past activities ====================
     current_time_spent = {}
     target_alloc = { "C": 0.5, "D": 0.5 }
@@ -65,3 +71,7 @@ def test_calculate_action():
     with pytest.raises(ValueError) as invalid_target_msg:
         calculate_action(current_time_spent, {"A": 1.0, "B": 0.0})
         invalid_target_msg.match("Target allocation set cannot contain 0")
+
+
+    # ==================== todo ====================
+    
