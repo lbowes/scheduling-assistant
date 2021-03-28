@@ -1,6 +1,5 @@
 import math
 import json
-from docopt import docopt
 from typing import Dict
 from pendulum import duration
 
