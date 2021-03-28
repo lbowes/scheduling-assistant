@@ -5,7 +5,7 @@ from pendulum import duration
 from scheduling_assistant import calculate_action
 
 
-def test_calculate_action():
+def test_calculate_action() -> None:
     # ==================== Normal input ====================
     # Case 1
     current_time_spent = { "A": duration(hours=2) }

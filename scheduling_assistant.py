@@ -2,9 +2,10 @@ import math
 import json
 from typing import Dict
 from pendulum import duration
+from pendulum.duration import Duration
 
 
-def check_target_alloc(target_alloc: Dict[str, float]):
+def check_target_alloc(target_alloc: Dict[str, float]) -> None:
     """Validate a target allocation set"""
     target_allocs = target_alloc.values()
 
@@ -17,7 +18,7 @@ def check_target_alloc(target_alloc: Dict[str, float]):
         raise ValueError("Target allocation set cannot contain 0")
 
 
-def calc_extra_time_required(current_time_spent: Dict[str, duration], target_alloc: Dict[str, float], time_spent_s: int):
+def calc_extra_time_required(current_time_spent: Dict[str, duration], target_alloc: Dict[str, float], time_spent_s: int) -> int:
     """Calculate the minimum amount of extra time required (in seconds) to match `target_alloc`, having already spent
     `time_spent_s` seconds total in `current_time_spent` """
     time_required_s = 0
@@ -31,9 +32,9 @@ def calc_extra_time_required(current_time_spent: Dict[str, duration], target_all
     return time_required_s
 
 
-def load_current_time_spent_from_file(path: str):
+def load_activity_history(path: str) -> Dict[str, int]:
     """Parses a file containing the number of seconds spent on each activity in a set"""
-    with open("given.json", 'r') as given:
+    with open(path, 'r') as given:
         data = json.load(given)
 
     current_time_spent = {act: duration(seconds=s) for act, s in data.items()}
@@ -41,9 +42,9 @@ def load_current_time_spent_from_file(path: str):
     return current_time_spent
 
 
-def load_target_alloc_from_file(path: str):
+def load_activity_allocation_goal(path: str) -> Dict[str, Duration]:
     """Parses a file containing the relative priorities of a set of activities"""
-    with open("goal.json", 'r') as goal:
+    with open(path, 'r') as goal:
         data = json.load(goal)
 
     total_points = sum(data.values())
@@ -53,7 +54,7 @@ def load_target_alloc_from_file(path: str):
     return target_allocation
 
 
-def calculate_action(current_time_spent: Dict[str, duration], target_alloc: Dict[str, float]):
+def calculate_action(current_time_spent: Dict[str, duration], target_alloc: Dict[str, float]) -> Dict[str, any]:
     """Calculate the percentage allocation of future time between a set of activities, given a target allocation between
     them and the current amount of time spent on each."""
     check_target_alloc(target_alloc)
@@ -93,9 +94,9 @@ def calculate_action(current_time_spent: Dict[str, duration], target_alloc: Dict
     return action
 
 
-def main():
-    current_time_spent = load_current_time_spent_from_file("given.json")
-    target_allocation = load_target_alloc_from_file("goal.json")
+def main() -> None:
+    current_time_spent = load_activity_history("history.json")
+    target_allocation = load_activity_allocation_goal("goal.json")
 
     future = calculate_action(current_time_spent, target_allocation)
     print(future)
