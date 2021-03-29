@@ -132,3 +132,4 @@ dmypy.json
 notes
 tags
 *.json
+!tests/data/*.json

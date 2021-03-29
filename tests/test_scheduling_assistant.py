@@ -2,10 +2,11 @@ import pytest
 from typing import Dict
 from pendulum import duration
 
-from scheduling_assistant import calculate_action
+from action_calculation import calculate_action
+from utils import load_test_target_activities, load_test_activity_history
 
 
-def test_calculate_action() -> None:
+def test_action_calculation() -> None:
     # ==================== Normal input ====================
     # Case 1
     current_time_spent = { "A": duration(hours=2) }
@@ -73,5 +74,17 @@ def test_calculate_action() -> None:
         invalid_target_msg.match("Target allocation set cannot contain 0")
 
 
-    # ==================== todo ====================
-    
+def test_load_target_activity_allocation() -> None:
+    assert load_test_target_activities("normal_target") == { "A": 0.1, "D": 0.1, "B": 0.5, "C": 0.3 }
+    assert load_test_target_activities("partial_target") == { "A": 0.25, "C": 0.75 }
+    assert load_test_target_activities("empty") == {}
+
+
+def test_load_activity_history() -> None:
+    assert load_test_activity_history("normal_history") == {
+                "A": duration(hours=1),
+                "B": duration(hours=2, seconds=1),
+                "C": duration(hours=3, minutes=25, seconds=45)
+            }
+
+    assert load_test_activity_history("empty") == {}

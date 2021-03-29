@@ -1,5 +1,22 @@
+"""
+Calculate the actions required to reach a specific allocation of time between a set of activities, given information
+about how much time has already been spent on them.
+
+Usage:
+    action_calculation.py --history=<FILE> --target=<FILE> [--output=<FILE>]
+    action_calculation.py -h | --help
+
+Options:
+    --history=<FILE>   Current time spent on activities
+    --target=<FILE>    Target activity allocation
+    --output=<FILE>    Output file to store actions
+    -h --help  Show this screen
+"""
+
+
 import math
 import json
+from docopt import docopt
 from typing import Dict
 from pendulum import duration
 from pendulum.duration import Duration
@@ -42,14 +59,13 @@ def load_activity_history(path: str) -> Dict[str, int]:
     return current_time_spent
 
 
-def load_activity_allocation_goal(path: str) -> Dict[str, Duration]:
+def load_target_activity_allocation(path: str) -> Dict[str, Duration]:
     """Parses a file containing the relative priorities of a set of activities"""
-    with open(path, 'r') as goal:
-        data = json.load(goal)
+    with open(path, 'r') as target:
+        data = json.load(target)
 
     total_points = sum(data.values())
     target_allocation = {act: float(points) / total_points for act, points in data.items() if points > 0}
-    print("target_allocation: " + str(target_allocation))
     
     return target_allocation
 
@@ -94,13 +110,26 @@ def calculate_action(current_time_spent: Dict[str, duration], target_alloc: Dict
     return action
 
 
-def main() -> None:
-    current_time_spent = load_activity_history("history.json")
-    target_allocation = load_activity_allocation_goal("goal.json")
+def save_action_to(file_path: str, action: Dict[str, any]) -> None:
+    """Save an output action to file"""
+    with open(file_path, 'w', encoding='utf-8') as output_file:
+        if "min_required_time" in action:
+            action["min_required_time"] = action["min_required_time"].seconds
 
-    future = calculate_action(current_time_spent, target_allocation)
-    print(future)
+        json.dump(action, output_file, ensure_ascii=False, indent=4)
 
 
 if __name__ == '__main__':
-    main()
+    args = docopt(__doc__)
+
+    current_time_spent = load_activity_history(args['--history'])
+    target_allocation = load_target_activity_allocation(args['--target'])
+
+    action = calculate_action(current_time_spent, target_allocation)
+    
+    output_file = args['--output']
+
+    if output_file:
+        save_action_to(output_file, action)
+    else:
+        print("todo: print results to console")
