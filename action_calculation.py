@@ -75,15 +75,6 @@ def calculate_action(current_time_spent_s: Dict[str, int], target_alloc_points: 
     return action
 
 
-def save_action_to(file_path: str, action: Dict[str, any]) -> None:
-    """Save an output action to file"""
-    with open(file_path, 'w', encoding='utf-8') as output_file:
-        if "min_required_time" in action:
-            action["min_required_time"] = action["min_required_time"].seconds
-
-        json.dump(action, output_file, ensure_ascii=False, indent=4)
-
-
 if __name__ == '__main__':
     args = docopt(__doc__)
 
@@ -98,6 +89,7 @@ if __name__ == '__main__':
     output_file = args['--output']
 
     if output_file:
-        save_action_to(output_file, action)
+        with open(output_file, 'w', encoding='utf-8') as output_file:
+            json.dump(action, output_file, ensure_ascii=False, indent=4)
     else:
         print("todo: print results to console")
