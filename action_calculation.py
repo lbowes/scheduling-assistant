@@ -18,30 +18,15 @@ import math
 import json
 from docopt import docopt
 from typing import Dict
-from pendulum import duration
-from pendulum.duration import Duration
 
 
-def check_target_alloc(target_alloc: Dict[str, float]) -> None:
-    """Validate a target allocation set"""
-    target_allocs = target_alloc.values()
-
-    # The values in this dictionary represent percentages that must sum to equal 1
-    if not math.isclose(sum(target_allocs), 1.0, abs_tol=0.0001):
-        raise ValueError("Sum of target allocation values must equal 1") 
-    
-    # To spend 0% of overall time on an activity, requires that you spend an infinite amount of time on others
-    if 0.0 in target_allocs:
-        raise ValueError("Target allocation set cannot contain 0")
-
-
-def calc_extra_time_required(current_time_spent: Dict[str, duration], target_alloc: Dict[str, float], time_spent_s: int) -> int:
+def calc_extra_time_required(current_time_spent_s: Dict[str, int], target_alloc: Dict[str, float], time_spent_s: int) -> int:
     """Calculate the minimum amount of extra time required (in seconds) to match `target_alloc`, having already spent
     `time_spent_s` seconds total in `current_time_spent` """
     time_required_s = 0
 
     for act, target in target_alloc.items():
-        required_time_s = (current_time_spent[act].seconds / target_alloc[act]) - time_spent_s
+        required_time_s = (current_time_spent_s[act] / target_alloc[act]) - time_spent_s
 
         if required_time_s > time_required_s:
             time_required_s = required_time_s
@@ -49,49 +34,29 @@ def calc_extra_time_required(current_time_spent: Dict[str, duration], target_all
     return time_required_s
 
 
-def load_activity_history(path: str) -> Dict[str, int]:
-    """Parses a file containing the number of seconds spent on each activity in a set"""
-    with open(path, 'r') as given:
-        data = json.load(given)
-
-    current_time_spent = {act: duration(seconds=s) for act, s in data.items()}
-
-    return current_time_spent
-
-
-def load_target_activity_allocation(path: str) -> Dict[str, Duration]:
-    """Parses a file containing the relative priorities of a set of activities"""
-    with open(path, 'r') as target:
-        data = json.load(target)
-
-    total_points = sum(data.values())
-    target_allocation = {act: float(points) / total_points for act, points in data.items() if points > 0}
-    
-    return target_allocation
-
-
-def calculate_action(current_time_spent: Dict[str, duration], target_alloc: Dict[str, float]) -> Dict[str, any]:
+def calculate_action(current_time_spent_s: Dict[str, int], target_alloc_points: Dict[str, int]) -> Dict[str, any]:
     """Calculate the percentage allocation of future time between a set of activities, given a target allocation between
     them and the current amount of time spent on each."""
-    check_target_alloc(target_alloc)
+    total_points = sum(target_alloc_points.values())
+    target_alloc = {act: float(points) / total_points for act, points in target_alloc_points.items() if points > 0}
 
     action = { "allocation": target_alloc }
 
-    if not current_time_spent:
+    if not current_time_spent_s:
         return action
 
     for target_act in target_alloc:
-        if target_act not in current_time_spent:
-            current_time_spent[target_act] = duration()
+        if target_act not in current_time_spent_s:
+            current_time_spent_s[target_act] = 0
 
-    relevant_time_spent_s = sum((current_time_spent[act] for act in target_alloc), duration()).seconds
+    relevant_time_spent_s = sum(current_time_spent_s[act] for act in target_alloc)
 
-    time_required_s = calc_extra_time_required(current_time_spent, target_alloc, relevant_time_spent_s)
+    time_required_s = calc_extra_time_required(current_time_spent_s, target_alloc, relevant_time_spent_s)
 
     if time_required_s <= 0:
         return action
 
-    action["min_required_time"] = duration(seconds=time_required_s)
+    action["min_required_time_s"] = time_required_s
     action["allocation"] = {}
 
     total_time_s = relevant_time_spent_s + time_required_s
@@ -99,10 +64,10 @@ def calculate_action(current_time_spent: Dict[str, duration], target_alloc: Dict
     for act, target in target_alloc.items():
         target_alloc[act]
         total_time_s
-        current_time_spent[act].seconds
+        current_time_spent_s[act]
         time_required_s
 
-        allocation = (target_alloc[act] * total_time_s - current_time_spent[act].seconds) / time_required_s
+        allocation = (target_alloc[act] * total_time_s - current_time_spent_s[act]) / time_required_s
 
         if allocation:
             action["allocation"][act] = allocation
@@ -122,10 +87,13 @@ def save_action_to(file_path: str, action: Dict[str, any]) -> None:
 if __name__ == '__main__':
     args = docopt(__doc__)
 
-    current_time_spent = load_activity_history(args['--history'])
-    target_allocation = load_target_activity_allocation(args['--target'])
+    with open(args['--history'], 'r') as given:
+        current_time_spent_s  = json.load(given)
 
-    action = calculate_action(current_time_spent, target_allocation)
+    with open(args['--target'], 'r') as goal:
+        target_alloc_points  = json.load(goal)
+
+    action = calculate_action(current_time_spent_s, target_alloc_points)
     
     output_file = args['--output']
 
