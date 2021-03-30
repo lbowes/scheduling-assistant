@@ -131,3 +131,5 @@ dmypy.json
 # Custom
 notes
 tags
+*.json
+!tests/data/*.json
