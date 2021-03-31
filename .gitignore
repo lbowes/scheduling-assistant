@@ -133,3 +133,4 @@ notes
 tags
 *.json
 !tests/data/*.json
+secrets.py
