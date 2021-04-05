@@ -1,9 +1,10 @@
 """
 Usage:
-    scheduling_assistant.py --target=<FILE> [--output=<FILE>]
+    scheduling_assistant.py --config=<FILE> --target=<FILE> [--output=<FILE>]
     scheduling_assistant.py -h | --help
 
 Options:
+    -c --config=<FILE>    Config file
     -t --target=<FILE>    Target time allocation
     -o --output=<FILE>    Output file
     -h --help  Show this screen
@@ -13,14 +14,13 @@ Options:
 from docopt import docopt
 from typing import Dict, List
 from datetime import datetime
-from secrets import toggl_data
 import json
 
 from toggl.TogglPy import Toggl
 
 
 def main(args) -> None:
-    current_time_spent_s = get_current_time_spent_s()
+    current_time_spent_s = get_current_time_spent_s(args['--config'])
     target_alloc_points = get_target_allocation(args['--target'])
 
     action = calculate_action(current_time_spent_s, target_alloc_points)
@@ -28,13 +28,18 @@ def main(args) -> None:
     process_output(action, args['--output'])
 
 
-def get_current_time_spent_s() -> Dict[str, int]:
+def get_current_time_spent_s(config_file: str) -> Dict[str, int]:
+    with open(config_file, 'r') as f:
+        config = json.load(f)
+        api_token = config['api_token']
+        workspace_name = config['workspace_name']
+
     toggl = Toggl()
-    toggl.setAPIKey(toggl_data['api_token'])
+    toggl.setAPIKey(api_token)
 
     workspaces = toggl.getWorkspaces()
 
-    workspace_id = toggl.getWorkspace(name=toggl_data['workspace_name'])['id']
+    workspace_id = toggl.getWorkspace(name=workspace_name)['id']
 
     ref_time = datetime(2021, 1, 1)
 
