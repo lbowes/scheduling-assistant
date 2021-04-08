@@ -1,11 +1,10 @@
 """
 Usage:
-    scheduling_assistant.py --config=<FILE> --target=<FILE> [--output=<FILE>]
+    scheduling_assistant.py --config=<FILE> [--output=<FILE>]
     scheduling_assistant.py -h | --help
 
 Options:
     -c --config=<FILE>    Config file
-    -t --target=<FILE>    Target time allocation
     -o --output=<FILE>    Output file
     -h --help  Show this screen
 """
@@ -14,14 +13,16 @@ Options:
 from docopt import docopt
 from typing import Dict, List
 from datetime import datetime
+from pendulum import duration
 import json
 
+import gspread 
 from toggl.TogglPy import Toggl
 
 
 def main(args) -> None:
     current_time_spent_s = get_current_time_spent_s(args['--config'])
-    target_alloc_points = get_target_allocation(args['--target'])
+    target_alloc_points = get_target_allocation()
 
     action = calculate_action(current_time_spent_s, target_alloc_points)
     
@@ -75,9 +76,14 @@ def calc_total_time_spent_across(time_entries: List[Dict[str, any]]) -> Dict[str
     return time_spent_s
 
 
-def get_target_allocation(file_path: str) -> Dict[str, int]:
-    with open(file_path, 'r') as target:
-        return json.load(target)
+def get_target_allocation() -> Dict[str, int]:
+    gc = gspread.service_account()
+    worksheet = gc.open("target_activity_allocation").sheet1
+
+    activity_names = worksheet.col_values(1)[1:]
+    activity_points = [int(v) for v in worksheet.col_values(2)[1:]]
+
+    return dict(zip(activity_names, activity_points))
 
 
 def calculate_action(current_time_spent_s: Dict[str, int], target_alloc_points: Dict[str, int]) -> Dict[str, any]:
@@ -132,8 +138,17 @@ def process_output(action: Dict[str, any], output_file: str) -> None:
         with open(output_file, 'w', encoding='utf-8') as output_file:
             json.dump(action, output_file, ensure_ascii=False, indent=4)
     else:
-        print("todo: print results to console")
-        print(action)
+        # print results to console
+        allocation = dict(sorted(action['allocation'].items(), key=lambda item: item[1], reverse=True))
+
+        if 'min_required_time_s' in action:
+            min_required_time = duration(seconds=action['min_required_time_s'])
+
+            for activity, percent in allocation.items():
+                print(activity + ": " + str(min_required_time * percent))
+        else:
+            for activity, percent in allocation.items():
+                print(activity + ": " + "{0:.0%}".format(percent))
 
 
 if __name__ == '__main__':
