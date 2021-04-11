@@ -64,19 +64,6 @@ def get_current_time_spent_s() -> Dict[str, int]:
     return current_time_spent_s
 
 
-def calc_total_time_spent_across(time_entries: List[Dict[str, any]]) -> Dict[str, int]:
-    time_spent_s = {}
-
-    for e in time_entries:
-        duration_s = seconds=int(e['dur'] / 1000)
-
-        project = e['project']
-        if project:
-            time_spent_s[project] = time_spent_s.get(project, 0) + duration_s
-
-    return time_spent_s
-
-
 def get_target_allocation() -> Dict[str, int]:
     gs = gspread.service_account()
     target_alloc_worksheet = gs.open(CONFIG['google_spreadsheet']).sheet1
