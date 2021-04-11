@@ -1,11 +1,10 @@
 """
 Usage:
-    scheduling_assistant.py --config=<FILE> [--output=<FILE>]
+    scheduling_assistant.py --config=<FILE>
     scheduling_assistant.py -h | --help
 
 Options:
     -c --config=<FILE>    Config file
-    -o --output=<FILE>    Output file
     -h --help  Show this screen
 """
 
@@ -17,35 +16,37 @@ from pendulum import duration
 import json
 
 import gspread 
+import todoist 
 from toggl.TogglPy import Toggl
 
 
-def main(args) -> None:
-    current_time_spent_s = get_current_time_spent_s(args['--config'])
+args = docopt(__doc__)
+with open(args['--config'], 'r') as config_file:
+    CONFIG = json.load(config_file)
+
+
+def main() -> None:
+    current_time_spent_s = get_current_time_spent_s()
     target_alloc_points = get_target_allocation()
 
-    action = calculate_action(current_time_spent_s, target_alloc_points)
+    future_alloc = calc_future_alloc(current_time_spent_s, target_alloc_points)
     
-    process_output(action, args['--output'])
+    target_activity_names = list(target_alloc_points.keys())
+    process_output(future_alloc, target_activity_names)
 
 
-def get_current_time_spent_s(config_file: str) -> Dict[str, int]:
-    with open(config_file, 'r') as f:
-        config = json.load(f)
-        api_token = config['api_token']
-        workspace_name = config['workspace_name']
+def get_current_time_spent_s() -> Dict[str, int]:
+    toggl_cfg = CONFIG['toggl']
 
     toggl = Toggl()
-    toggl.setAPIKey(api_token)
+    toggl.setAPIKey(toggl_cfg['api_token'])
 
-    workspaces = toggl.getWorkspaces()
-
-    workspace_id = toggl.getWorkspace(name=workspace_name)['id']
+    workspace = toggl.getWorkspace(name=toggl_cfg['workspace_name'])
 
     ref_time = datetime(2021, 1, 1)
 
     data = {
-        'workspace_id': workspace_id,
+        'workspace_id': workspace['id'],
         'since': ref_time
     }
 
@@ -77,25 +78,25 @@ def calc_total_time_spent_across(time_entries: List[Dict[str, any]]) -> Dict[str
 
 
 def get_target_allocation() -> Dict[str, int]:
-    gc = gspread.service_account()
-    worksheet = gc.open("target_activity_allocation").sheet1
+    gs = gspread.service_account()
+    target_alloc_worksheet = gs.open(CONFIG['google_spreadsheet']).sheet1
 
-    activity_names = worksheet.col_values(1)[1:]
-    activity_points = [int(v) for v in worksheet.col_values(2)[1:]]
+    activity_names = target_alloc_worksheet.col_values(1)[1:]
+    activity_points = [int(v) for v in target_alloc_worksheet.col_values(2)[1:]]
 
     return dict(zip(activity_names, activity_points))
 
 
-def calculate_action(current_time_spent_s: Dict[str, int], target_alloc_points: Dict[str, int]) -> Dict[str, any]:
+def calc_future_alloc(current_time_spent_s: Dict[str, int], target_alloc_points: Dict[str, int]) -> Dict[str, any]:
     """Calculate the percentage allocation of future time between a set of activities, given a target allocation between
     them and the current amount of time spent on each."""
     total_points = sum(target_alloc_points.values())
     target_alloc = {act: float(points) / total_points for act, points in target_alloc_points.items() if points > 0}
 
-    action = { "allocation": target_alloc }
+    future_alloc = { "allocation": target_alloc }
 
     if not current_time_spent_s:
-        return action
+        return future_alloc
 
     for target_act in target_alloc:
         if target_act not in current_time_spent_s:
@@ -112,10 +113,10 @@ def calculate_action(current_time_spent_s: Dict[str, int], target_alloc_points: 
             time_required_s = required_time_s
 
     if time_required_s <= 0:
-        return action
+        return future_alloc
 
-    action["min_required_time_s"] = time_required_s
-    action["allocation"] = {}
+    future_alloc["min_required_time_s"] = time_required_s
+    future_alloc["allocation"] = {}
 
     total_time_s = relevant_time_spent_s + time_required_s
 
@@ -128,29 +129,47 @@ def calculate_action(current_time_spent_s: Dict[str, int], target_alloc_points: 
         allocation = (target_alloc[act] * total_time_s - current_time_spent_s[act]) / time_required_s
 
         if allocation:
-            action["allocation"][act] = allocation
+            future_alloc["allocation"][act] = allocation
 
-    return action
+    return future_alloc
 
 
-def process_output(action: Dict[str, any], output_file: str) -> None:
-    if output_file:
-        with open(output_file, 'w', encoding='utf-8') as output_file:
-            json.dump(action, output_file, ensure_ascii=False, indent=4)
-    else:
-        # print results to console
-        allocation = dict(sorted(action['allocation'].items(), key=lambda item: item[1], reverse=True))
+def process_output(future_alloc: Dict[str, any], target_activity_names: List[str]) -> None:
+    # Update Toggl projects
+    # todo
 
-        if 'min_required_time_s' in action:
-            min_required_time = duration(seconds=action['min_required_time_s'])
+    # Output current priority to Todoist
+    upload_future_alloc_to_todoist(future_alloc, target_activity_names)
 
-            for activity, percent in allocation.items():
-                print(activity + ": " + str(min_required_time * percent))
-        else:
-            for activity, percent in allocation.items():
-                print(activity + ": " + "{0:.0%}".format(percent))
 
+def upload_future_alloc_to_todoist(future_alloc: Dict[str, any], target_activity_names: List[str]):
+    api = todoist.TodoistAPI(CONFIG['todoist_api_token'])
+    api.sync()
+
+    # Remove any existing tasks added by this application
+    tasks = api.state['items']
+    for task in tasks:
+        if any(task['content'].startswith(t) for t in target_activity_names):
+            task.delete()
+
+    # Work out what the priority activity is
+    allocation = future_alloc['allocation']
+    priority = max(allocation, key=allocation.get)
+
+    task_name = priority
+
+    # ...and how much time is required on it
+    min_required_time_s = future_alloc.get('min_required_time_s')
+    if min_required_time_s:
+        req_time = duration(seconds=allocation[priority] * min_required_time_s)
+        hours = req_time.in_hours()
+        mins = req_time.minutes
+        task_name += " ({}h {}m)".format(hours, mins)
+
+    api.items.add(task_name, due={ "string": "today" })
+
+    api.commit()
+    
 
 if __name__ == '__main__':
-    args = docopt(__doc__)
-    main(args)
+    main()
