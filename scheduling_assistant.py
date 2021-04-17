@@ -26,16 +26,23 @@ with open(args['--config'], 'r') as config_file:
 
 
 def main() -> None:
-    current_time_spent_s = get_current_time_spent_s()
-    target_alloc_points = get_target_allocation()
+    print("Reading input configuration spreadsheet...")
+    cfg = get_input_config()
 
-    future_alloc = calc_future_alloc(current_time_spent_s, target_alloc_points)
+    ref_date = datetime.strptime(cfg['reference_date'], "%d/%m/%Y")
+    print("Fetching current time allocation...")
+    current_time_spent_s = get_current_time_spent_s(since=ref_date)
+
+    target_alloc_scores = cfg['target_alloc_scores']
+    print("Calculating required future time allocation...")
+    future_alloc = calc_future_alloc(current_time_spent_s, target_alloc_scores)
     
-    target_activity_names = list(target_alloc_points.keys())
+    target_activity_names = list(target_alloc_scores.keys())
+    print("Writing output...")
     process_output(future_alloc, target_activity_names)
 
 
-def get_current_time_spent_s() -> Dict[str, int]:
+def get_current_time_spent_s(since: datetime) -> Dict[str, int]:
     toggl_cfg = CONFIG['toggl']
 
     toggl = Toggl()
@@ -43,11 +50,9 @@ def get_current_time_spent_s() -> Dict[str, int]:
 
     workspace = toggl.getWorkspace(name=toggl_cfg['workspace_name'])
 
-    ref_time = datetime(2021, 1, 1)
-
     data = {
         'workspace_id': workspace['id'],
-        'since': ref_time
+        'since': since
     }
 
     time_entries = toggl.getDetailedReportPages(data=data)['data']
@@ -64,21 +69,75 @@ def get_current_time_spent_s() -> Dict[str, int]:
     return current_time_spent_s
 
 
-def get_target_allocation() -> Dict[str, int]:
+def get_input_config() -> Dict[str, any]:
     gs = gspread.service_account()
-    target_alloc_worksheet = gs.open(CONFIG['google_spreadsheet']).sheet1
+    config_worksheet = gs.open(CONFIG['google_spreadsheet']).sheet1
 
-    activity_names = target_alloc_worksheet.col_values(1)[1:]
-    activity_points = [int(v) for v in target_alloc_worksheet.col_values(2)[1:]]
+    cells = config_worksheet.get_all_values()
 
-    return dict(zip(activity_names, activity_points))
+    num_rows = len(cells)
+    num_cols = len(cells[0])
+
+    ref_date = None
+    activity_header_coords = None
+    score_header_coords = None
+
+    for row in range(num_rows):
+        for col in range(num_cols):
+            value = cells[row][col]
+
+            coords = (row, col)
+
+            if value == "Reference Date" and col < num_cols - 1:
+                ref_date = cells[row][col + 1]
+            elif value == "Activity":
+                activity_header_coords = coords
+            elif value == "Score":
+                score_header_coords = coords
+
+    if not ref_date:
+        print("Could not find reference date") 
+
+    if not activity_header_coords:
+        print("Could not find activity name data") 
+        
+    if not score_header_coords:
+        print("Could not find activity score data") 
+
+    if not (ref_date and activity_header_coords and score_header_coords):
+        raise ValueError("Incomplete input provided.")
+        return
+
+    activity_names = []
+    activity_scores = []
+
+    # Iterate through each activity
+    start_activity_row = activity_header_coords[0] + 1
+    start_score_row = score_header_coords[0] + 1
+
+    for i in range(0, num_rows - start_activity_row):
+        activity_name = cells[start_activity_row + i][activity_header_coords[1]]
+
+        if activity_name:
+            activity_names.append(activity_name)
+
+            score = cells[start_score_row + i][score_header_coords[1]]
+            activity_scores.append(int(score) if score else 0)
+
+    # Extract the target allocation of time between activities
+    target_alloc_scores = dict(zip(activity_names, activity_scores))
+
+    return {
+        "reference_date": ref_date,
+        "target_alloc_scores": target_alloc_scores
+    }
 
 
-def calc_future_alloc(current_time_spent_s: Dict[str, int], target_alloc_points: Dict[str, int]) -> Dict[str, any]:
+def calc_future_alloc(current_time_spent_s: Dict[str, int], target_alloc_scores: Dict[str, int]) -> Dict[str, any]:
     """Calculate the percentage allocation of future time between a set of activities, given a target allocation between
     them and the current amount of time spent on each."""
-    total_points = sum(target_alloc_points.values())
-    target_alloc = {act: float(points) / total_points for act, points in target_alloc_points.items() if points > 0}
+    total_score = sum(target_alloc_scores.values())
+    target_alloc = { act: float(score) / total_score for act, score in target_alloc_scores.items() if score > 0 }
 
     future_alloc = { "allocation": target_alloc }
 
