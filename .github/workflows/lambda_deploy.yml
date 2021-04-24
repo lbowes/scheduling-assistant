@@ -14,10 +14,18 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt --target .; fi
           ls -a
       
-      - name: zip
+      - name: Create zip file
         uses: montudor/action-zip@v0.1.0
         with:
           args: zip -qq -r ./bundle.zip ./
+          
+      - name: Upload to S3
+        uses: shallwefootball/s3-upload-action@master
+        with:
+          aws_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}
+          aws_bucket: scheduling-assistant-lambda-package
+          source_dir: 'bundle.zip'
           
       - name: default deploy
         uses: appleboy/lambda-action@master
@@ -27,4 +35,3 @@ jobs:
           aws_region: eu-west-2
           s3_bucket: scheduling-assistant-lambda-package
           function_name: scheduling-assistant
-          zip_file: bundle.zip
