@@ -1,6 +1,6 @@
 import pytest
 
-from scheduling_assistant import calc_future_alloc
+from logic import calc_future_alloc
 
 
 def test_calc_future_alloc() -> None:
