@@ -2,6 +2,8 @@ from typing import Dict, List
 from datetime import datetime
 from pendulum import duration
 import awswrangler.secretsmanager as sm
+import os
+import json
 
 import gspread 
 import todoist 
@@ -66,7 +68,13 @@ def get_current_time_spent_s(since: datetime) -> Dict[str, int]:
 
 
 def get_target_alloc_scores() -> Dict[str, any]:
-    gs = gspread.service_account()
+    # Try to authorize the service account using local config file
+    try:
+        gs = gspread.service_account()
+    except:
+        # https://stackoverflow.com/questions/41369993/modify-google-sheet-from-aws-lambda
+        credentials = sm.get_secret_json("gspreadCredentials")
+        gs = gspread.service_account_from_dict(credentials)
 
     spreadsheet_name = sm.get_secret("SchedAssistInputSpreadsheetName")
     config_worksheet = gs.open(spreadsheet_name).sheet1
@@ -165,7 +173,7 @@ def upload_future_alloc_to_todoist(future_alloc: Dict[str, any], target_activity
     allocation = future_alloc['allocation']
     priority = max(allocation, key=allocation.get)
 
-    task_name = priority
+    task_name = priority + " " + str(datetime.now())
 
     # ...and how much time is required on it
     min_required_time_s = future_alloc.get('min_required_time_s')
