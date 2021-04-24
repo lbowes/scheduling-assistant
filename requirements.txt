@@ -1,5 +1,6 @@
 faker
 git+https://github.com/matthewdowney/TogglPy.git@824e6855b00a9602b574f21a8e88f95a5d5bdb27
 awswrangler
+pendulum
 gspread
 todoist-python

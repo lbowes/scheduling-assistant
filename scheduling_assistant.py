@@ -1,6 +1,8 @@
 from typing import Dict, List
 from datetime import datetime
+from pendulum import duration
 import awswrangler.secretsmanager as sm
+
 
 import gspread 
 import todoist 
