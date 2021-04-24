@@ -19,15 +19,23 @@ jobs:
         with:
           args: zip -qq -r ./bundle.zip ./
           
-      - name: Upload to S3
-        uses: shallwefootball/s3-upload-action@master
-        with:
-          aws_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}
-          aws_bucket: scheduling-assistant-lambda-package
-          source_dir: 'bundle.zip'
+      - name: Move zip into folder
+        run: |
+          mkdir lambda_deploy_package
+          mv bundle.zip ./lambda_deploy_package
           
-      - name: default deploy
+      - name: Upload to S3
+        uses: jakejarvis/s3-sync-action@master
+        with:
+          args: --acl public-read --follow-symlinks --delete
+        env:
+          AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: 'eu-west-2'
+          SOURCE_DIR: 'lambda_deploy_package'
+          
+      - name: Deploy to lambda
         uses: appleboy/lambda-action@master
         with:
           aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
