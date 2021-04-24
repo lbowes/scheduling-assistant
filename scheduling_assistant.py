@@ -1,9 +1,6 @@
 from typing import Dict, List
 from datetime import datetime
-from pendulum import duration
 import awswrangler.secretsmanager as sm
-import os
-import json
 
 import gspread 
 import todoist 
@@ -178,9 +175,9 @@ def upload_future_alloc_to_todoist(future_alloc: Dict[str, any], target_activity
     # ...and how much time is required on it
     min_required_time_s = future_alloc.get('min_required_time_s')
     if min_required_time_s:
-        req_time = duration(seconds=allocation[priority] * min_required_time_s)
-        hours = req_time.in_hours()
-        mins = req_time.minutes
+        req_time_s = allocation[priority] * min_required_time_s
+        hours, remaining_seconds = divmod(req_time_s, 3600)
+        mins = round(remaining_seconds / 60.0)
         task_name += " ({0}h {1}m)".format(hours, mins)
 
     # Remove any existing tasks added by this application
