@@ -46,5 +46,3 @@ def calc_future_alloc(current_time_spent_s: Dict[str, int], target_alloc_scores:
             future_alloc["allocation"][act] = allocation
 
     return future_alloc
-
-
