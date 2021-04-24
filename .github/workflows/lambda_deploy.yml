@@ -8,16 +8,38 @@ jobs:
     steps:
       - uses: actions/checkout@v1
       
-      - name: zip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt --target .; fi
+          ls -a
+      
+      - name: Create zip file
         uses: montudor/action-zip@v0.1.0
         with:
           args: zip -qq -r ./bundle.zip ./
           
-      - name: default deploy
+      - name: Move zip into folder
+        run: |
+          mkdir lambda_deploy_package
+          mv bundle.zip ./lambda_deploy_package
+          
+      - name: Upload to S3
+        uses: jakejarvis/s3-sync-action@master
+        with:
+          args: --delete
+        env:
+          AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: 'eu-west-2'
+          SOURCE_DIR: 'lambda_deploy_package'
+          
+      - name: Deploy to lambda
         uses: appleboy/lambda-action@master
         with:
           aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws_region: eu-west-2
+          s3_bucket: scheduling-assistant-lambda-package
           function_name: scheduling-assistant
-          zip_file: bundle.zip
