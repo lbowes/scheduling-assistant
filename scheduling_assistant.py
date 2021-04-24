@@ -177,13 +177,18 @@ def upload_future_alloc_to_todoist(future_alloc: Dict[str, any], target_activity
 
     # Remove any existing tasks added by this application
     priority_task_found = False
+    TODAY = { "string": "today" }
+
     for task in api.state['items']:
         if task['project_id'] == indicator_project_id:
             if not priority_task_found and task['content'].startswith(priority):
                 priority_task_found = True
-                api.items.update(task['id'], content=task_name, due={ "string": "today" }, project_id=indicator_project_id)
+                api.items.update(task['id'], content=task_name, due=TODAY, project_id=indicator_project_id)
             else:
                 task.delete()
+
+    if not priority_task_found:
+        api.items.add(task_name, due=TODAY, project_id=indicator_project_id)
 
     api.commit()
     
