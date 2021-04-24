@@ -1,39 +1,25 @@
-"""
-Usage:
-    scheduling_assistant.py --config=<FILE>
-    scheduling_assistant.py -h | --help
-
-Options:
-    -c --config=<FILE>    Config file
-    -h --help  Show this screen
-"""
-
-
-from docopt import docopt
 from typing import Dict, List
 from datetime import datetime
-from pendulum import duration
-import json
+import awswrangler.secretsmanager as sm
 
 import gspread 
 import todoist 
 from toggl.TogglPy import Toggl
 
 
-args = docopt(__doc__)
-with open(args['--config'], 'r') as config_file:
-    CONFIG = json.load(config_file)
+TOGGL = Toggl()
+TOGGL.setAPIKey(sm.get_secret("TogglAPIToken"))
+TOGGL_WORKSPACE_ID = TOGGL.getWorkspace(name=sm.get_secret("TogglWorkspaceName"))['id']
 
 
 def main() -> None:
     print("Reading input configuration spreadsheet...")
-    cfg = get_input_config()
+    target_alloc_scores = get_target_alloc_scores()
 
-    ref_date = datetime.strptime(cfg['reference_date'], "%d/%m/%Y")
+    ref_date = datetime(2021, 1, 1)
     print("Fetching current time allocation...")
     current_time_spent_s = get_current_time_spent_s(since=ref_date)
 
-    target_alloc_scores = cfg['target_alloc_scores']
     print("Calculating required future time allocation...")
     future_alloc = calc_future_alloc(current_time_spent_s, target_alloc_scores)
     
@@ -43,22 +29,16 @@ def main() -> None:
 
 
 def get_current_time_spent_s(since: datetime) -> Dict[str, int]:
-    toggl_cfg = CONFIG['toggl']
-
-    toggl = Toggl()
-    toggl.setAPIKey(toggl_cfg['api_token'])
-
-    workspace = toggl.getWorkspace(name=toggl_cfg['workspace_name'])
-
     data = {
-        'workspace_id': workspace['id'],
+        'workspace_id': TOGGL_WORKSPACE_ID,
         'since': since
     }
 
-    time_entries = toggl.getDetailedReportPages(data=data)['data']
-
     current_time_spent_s = {}
 
+    time_entries = TOGGL.getDetailedReportPages(data=data)['data']
+
+    # Get completed time entries
     for e in time_entries:
         duration_s = int(e['dur'] / 1000)
 
@@ -66,19 +46,33 @@ def get_current_time_spent_s(since: datetime) -> Dict[str, int]:
         if project:
             current_time_spent_s[project] = current_time_spent_s.get(project, 0) + duration_s
 
+    # Get currently running time entry if there is one
+    current_time_entry = TOGGL.request("https://api.track.toggl.com/api/v8/time_entries/current")['data']
+
+    if current_time_entry:
+        pid = current_time_entry['pid']
+        project = TOGGL.request(f"https://api.track.toggl.com/api/v8/projects/{pid}")
+        
+        current_entry_start = datetime.fromisoformat(current_time_entry['start'])
+        duration = datetime.now().astimezone() - max(since.astimezone(), current_entry_start)
+
+        project_name = project['data']['name']
+        current_time_spent_s[project_name] = current_time_spent_s.get(project_name, 0) + duration.total_seconds()
+
     return current_time_spent_s
 
 
-def get_input_config() -> Dict[str, any]:
+def get_target_alloc_scores() -> Dict[str, any]:
     gs = gspread.service_account()
-    config_worksheet = gs.open(CONFIG['google_spreadsheet']).sheet1
+
+    spreadsheet_name = sm.get_secret("SchedAssistInputSpreadsheetName")
+    config_worksheet = gs.open(spreadsheet_name).sheet1
 
     cells = config_worksheet.get_all_values()
 
     num_rows = len(cells)
     num_cols = len(cells[0])
 
-    ref_date = None
     activity_header_coords = None
     score_header_coords = None
 
@@ -88,15 +82,10 @@ def get_input_config() -> Dict[str, any]:
 
             coords = (row, col)
 
-            if value == "Reference Date" and col < num_cols - 1:
-                ref_date = cells[row][col + 1]
-            elif value == "Activity":
+            if value == "Activity":
                 activity_header_coords = coords
             elif value == "Score":
                 score_header_coords = coords
-
-    if not ref_date:
-        print("Could not find reference date") 
 
     if not activity_header_coords:
         print("Could not find activity name data") 
@@ -104,7 +93,7 @@ def get_input_config() -> Dict[str, any]:
     if not score_header_coords:
         print("Could not find activity score data") 
 
-    if not (ref_date and activity_header_coords and score_header_coords):
+    if not (activity_header_coords and score_header_coords):
         raise ValueError("Incomplete input provided.")
         return
 
@@ -127,10 +116,7 @@ def get_input_config() -> Dict[str, any]:
     # Extract the target allocation of time between activities
     target_alloc_scores = dict(zip(activity_names, activity_scores))
 
-    return {
-        "reference_date": ref_date,
-        "target_alloc_scores": target_alloc_scores
-    }
+    return target_alloc_scores
 
 
 def calc_future_alloc(current_time_spent_s: Dict[str, int], target_alloc_scores: Dict[str, int]) -> Dict[str, any]:
@@ -181,22 +167,43 @@ def calc_future_alloc(current_time_spent_s: Dict[str, int], target_alloc_scores:
 
 
 def process_output(future_alloc: Dict[str, any], target_activity_names: List[str]) -> None:
-    # Update Toggl projects
-    # todo
-
-    # Output current priority to Todoist
+    update_toggl_projects(target_activity_names)
     upload_future_alloc_to_todoist(future_alloc, target_activity_names)
 
 
+def update_toggl_projects(target_activity_names: List[str]):
+    """Make sure all activities in the target set are available on Toggl."""
+
+    # Get a list of current Toggl projects
+    projects = TOGGL.request(f"https://www.toggl.com/api/v8/workspaces/{TOGGL_WORKSPACE_ID}/projects")
+    current_project_names = [p['name'] for p in projects] if projects else []
+
+    data = { 
+        "project": { 
+            "name": "", 
+            "wid": TOGGL_WORKSPACE_ID, 
+            "is_private": True 
+        }
+    }
+
+    # Add any target activities that are not already projects
+    for new_project in list(set(target_activity_names) - set(current_project_names)):
+        data['project']['name'] = new_project
+        TOGGL.postRequest("https://www.toggl.com/api/v8/projects", parameters=data)
+
+
 def upload_future_alloc_to_todoist(future_alloc: Dict[str, any], target_activity_names: List[str]):
-    api = todoist.TodoistAPI(CONFIG['todoist_api_token'])
+    api = todoist.TodoistAPI(sm.get_secret("TodoistAPIToken"))
     api.sync()
 
-    # Remove any existing tasks added by this application
-    tasks = api.state['items']
-    for task in tasks:
-        if any(task['content'].startswith(t) for t in target_activity_names):
-            task.delete()
+    # Get list of current Todoist projects
+    projects = api.state['projects']
+   
+    PROJECT_NAME = "Scheduling Assistant"
+    indicator_project_id = next((proj['id'] for proj in projects if proj['name'] == PROJECT_NAME), None)
+
+    if not indicator_project_id:
+        indicator_project_id = api.projects.add(PROJECT_NAME)['id']
 
     # Work out what the priority activity is
     allocation = future_alloc['allocation']
@@ -210,9 +217,17 @@ def upload_future_alloc_to_todoist(future_alloc: Dict[str, any], target_activity
         req_time = duration(seconds=allocation[priority] * min_required_time_s)
         hours = req_time.in_hours()
         mins = req_time.minutes
-        task_name += " ({}h {}m)".format(hours, mins)
+        task_name += " ({0}h {1}m)".format(hours, mins)
 
-    api.items.add(task_name, due={ "string": "today" })
+    # Remove any existing tasks added by this application
+    priority_task_found = False
+    for task in api.state['items']:
+        if task['project_id'] == indicator_project_id:
+            if not priority_task_found and task['content'].startswith(priority):
+                priority_task_found = True
+                api.items.update(task['id'], content=task_name, due={ "string": "today" }, project_id=indicator_project_id)
+            else:
+                task.delete()
 
     api.commit()
     
