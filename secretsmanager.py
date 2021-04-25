@@ -19,9 +19,9 @@ class SecretsManager:
             get_secret_value_response = self._client.get_secret_value(SecretId=name)
         except ClientError as e:
             error_code = e.response['Error']['Code'] 
+            print("ClientError: " + error_code)
             
             if error_code == 'AccessDeniedException':
-                print(str(e.response))
                 raise e
             if error_code == 'DecryptionFailureException':
                 # Secrets Manager can't decrypt the protected secret text using the provided KMS key.

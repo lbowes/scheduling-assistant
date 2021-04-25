@@ -3,6 +3,7 @@ from datetime import datetime
 from secretsmanager import SecretsManager
 
 import gspread 
+import json 
 import todoist 
 from toggl.TogglPy import Toggl
 
@@ -69,12 +70,12 @@ def get_current_time_spent_s(since: datetime) -> Dict[str, int]:
 
 def get_target_alloc_scores() -> Dict[str, any]:
     # Try to authorize the service account using local config file
-    try:
-        gs = gspread.service_account()
-    except:
+    #try:
+    #    gs = gspread.service_account()
+    #except:
         # https://stackoverflow.com/questions/41369993/modify-google-sheet-from-aws-lambda
-        credentials = sm.get_secret("gspreadCredentials")
-        gs = gspread.service_account_from_dict(credentials)
+    credentials = json.loads(sm.get_secret("gspreadCredentials"))
+    gs = gspread.service_account_from_dict(credentials)
 
     spreadsheet_name = sm.get_secret("SchedAssistInputSpreadsheetName")
     config_worksheet = gs.open(spreadsheet_name).sheet1
