@@ -42,4 +42,5 @@ jobs:
           aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws_region: eu-west-2
           s3_bucket: scheduling-assistant-lambda-package
+          s3_key: bundle.zip
           function_name: scheduling-assistant
