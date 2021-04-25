@@ -158,7 +158,8 @@ def update_toggl_projects(target_activity_names: List[str]):
 
 
 def upload_future_alloc_to_todoist(future_alloc: Dict[str, any], target_activity_names: List[str]):
-    api = todoist.TodoistAPI(sm.get_secret("TodoistAPIToken"), cache='/tmp/.todoist-sync')
+    todoist_api_cache = os.environ.get('TODOIST_API_CACHE', '~/.todoist-sync')
+    api = todoist.TodoistAPI(sm.get_secret("TodoistAPIToken"), cache=TODOIST_API_CACHE)
     api.sync()
 
     # Get list of current Todoist projects
