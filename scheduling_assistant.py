@@ -1,12 +1,15 @@
 from typing import Dict, List
 from datetime import datetime
-import awswrangler.secretsmanager as sm
+from secretsmanager import SecretsManager
 
 import gspread 
 import todoist 
 from toggl.TogglPy import Toggl
 
 from logic import calc_future_alloc
+
+
+sm = SecretsManager(region='eu-west-2')
 
 
 TOGGL = Toggl()
