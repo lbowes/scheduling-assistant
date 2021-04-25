@@ -17,7 +17,7 @@ TOGGL.setAPIKey(sm.get_secret("TogglAPIToken"))
 TOGGL_WORKSPACE_ID = TOGGL.getWorkspace(name=sm.get_secret("TogglWorkspaceName"))['id']
 
 
-def main() -> None:
+def main(events, context) -> None:
     print("Reading input configuration spreadsheet...")
     target_alloc_scores = get_target_alloc_scores()
 
