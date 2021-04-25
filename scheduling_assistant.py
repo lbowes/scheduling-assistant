@@ -73,7 +73,7 @@ def get_target_alloc_scores() -> Dict[str, any]:
         gs = gspread.service_account()
     except:
         # https://stackoverflow.com/questions/41369993/modify-google-sheet-from-aws-lambda
-        credentials = sm.get_secret_json("gspreadCredentials")
+        credentials = sm.get_secret("gspreadCredentials")
         gs = gspread.service_account_from_dict(credentials)
 
     spreadsheet_name = sm.get_secret("SchedAssistInputSpreadsheetName")
@@ -202,4 +202,4 @@ def upload_future_alloc_to_todoist(future_alloc: Dict[str, any], target_activity
     
 
 if __name__ == '__main__':
-    main()
+    main(None, None)
