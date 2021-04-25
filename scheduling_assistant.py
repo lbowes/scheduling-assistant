@@ -19,7 +19,7 @@ TOGGL.setAPIKey(sm.get_secret("TogglAPIToken"))
 TOGGL_WORKSPACE_ID = TOGGL.getWorkspace(name=sm.get_secret("TogglWorkspaceName"))['id']
 
 
-def main(events, context) -> None:
+def run() -> None:
     print("Reading input configuration spreadsheet...")
     target_alloc_scores = get_target_alloc_scores()
 
@@ -218,4 +218,4 @@ def upload_future_alloc_to_todoist(future_alloc: Dict[str, any], target_activity
     
 
 if __name__ == '__main__':
-    main(None, None)
+    run()
