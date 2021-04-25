@@ -17,8 +17,11 @@ class SecretsManager:
     def get_secret(self, name: str) -> str:
         try:
             get_secret_value_response = self._client.get_secret_value(SecretId=name)
+            print("get_secret_value_response: " + str(get_secret_value_response))
         except ClientError as e:
             error_code = e.response['Error']['Code'] 
+            print("error_code: " + str(error_code))
+
             if error_code == 'DecryptionFailureException':
                 # Secrets Manager can't decrypt the protected secret text using the provided KMS key.
                 # Deal with the exception here, and/or rethrow at your discretion.
