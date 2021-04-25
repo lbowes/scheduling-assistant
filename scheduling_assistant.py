@@ -158,6 +158,19 @@ def update_toggl_projects(target_activity_names: List[str]):
         TOGGL.postRequest("https://www.toggl.com/api/v8/projects", parameters=data)
 
 
+def duration_str(seconds: int):
+    """Converts a number of seconds into a string describing an equivalent duration in hours and minutes."""
+    hours, remaining_seconds = divmod(seconds, 3600)
+    mins = round(remaining_seconds / 60.0)
+
+    duration_str = "{}h".format(int(hours))
+
+    if mins:
+        duration_str += " {}m".format(mins)
+
+    return duration_str
+
+
 def upload_future_alloc_to_todoist(future_alloc: Dict[str, any], target_activity_names: List[str]):
     todoist_api_cache = os.environ.get('TODOIST_API_CACHE', '~/.todoist-sync')
     api = todoist.TodoistAPI(sm.get_secret("TodoistAPIToken"), cache=todoist_api_cache)
@@ -182,9 +195,7 @@ def upload_future_alloc_to_todoist(future_alloc: Dict[str, any], target_activity
     min_required_time_s = future_alloc.get('min_required_time_s')
     if min_required_time_s:
         req_time_s = allocation[priority] * min_required_time_s
-        hours, remaining_seconds = divmod(req_time_s, 3600)
-        mins = round(remaining_seconds / 60.0)
-        task_name += " ({0}h {1}m)".format(int(hours), mins)
+        task_name += " (" + duration_str(req_time_s) + ")"
 
     # Remove any existing tasks added by this application
     priority_task_found = False
