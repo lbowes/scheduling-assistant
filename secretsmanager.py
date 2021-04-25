@@ -17,6 +17,7 @@ class SecretsManager:
     def get_secret(self, name: str) -> str:
         try:
             get_secret_value_response = self._client.get_secret_value(SecretId=name)
+            print("Response: " + str(get_secret_value_response))
         except ClientError as e:
             if e.response['Error']['Code'] == 'DecryptionFailureException':
                 # Secrets Manager can't decrypt the protected secret text using the provided KMS key.
@@ -46,4 +47,4 @@ class SecretsManager:
             else:
                 secret = base64.b64decode(get_secret_value_response['SecretBinary'])
 
-        return secret
+            return secret
