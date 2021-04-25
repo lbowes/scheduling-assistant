@@ -2,8 +2,9 @@ from typing import Dict, List
 from datetime import datetime
 from secretsmanager import SecretsManager
 
-import gspread 
+import os
 import json 
+import gspread 
 import todoist 
 from toggl.TogglPy import Toggl
 
@@ -159,7 +160,7 @@ def update_toggl_projects(target_activity_names: List[str]):
 
 def upload_future_alloc_to_todoist(future_alloc: Dict[str, any], target_activity_names: List[str]):
     todoist_api_cache = os.environ.get('TODOIST_API_CACHE', '~/.todoist-sync')
-    api = todoist.TodoistAPI(sm.get_secret("TodoistAPIToken"), cache=TODOIST_API_CACHE)
+    api = todoist.TodoistAPI(sm.get_secret("TodoistAPIToken"), cache=todoist_api_cache)
     api.sync()
 
     # Get list of current Todoist projects
@@ -175,7 +176,7 @@ def upload_future_alloc_to_todoist(future_alloc: Dict[str, any], target_activity
     allocation = future_alloc['allocation']
     priority = max(allocation, key=allocation.get)
 
-    task_name = priority + " " + str(datetime.now())
+    task_name = priority
 
     # ...and how much time is required on it
     min_required_time_s = future_alloc.get('min_required_time_s')
@@ -183,7 +184,7 @@ def upload_future_alloc_to_todoist(future_alloc: Dict[str, any], target_activity
         req_time_s = allocation[priority] * min_required_time_s
         hours, remaining_seconds = divmod(req_time_s, 3600)
         mins = round(remaining_seconds / 60.0)
-        task_name += " ({0}h {1}m)".format(hours, mins)
+        task_name += " ({0}h {1}m)".format(int(hours), mins)
 
     # Remove any existing tasks added by this application
     priority_task_found = False
@@ -193,12 +194,14 @@ def upload_future_alloc_to_todoist(future_alloc: Dict[str, any], target_activity
         if task['project_id'] == indicator_project_id:
             if not priority_task_found and task['content'].startswith(priority):
                 priority_task_found = True
-                api.items.update(task['id'], content=task_name, due=TODAY, project_id=indicator_project_id)
+
+                task_id = task['id']
+                api.items.update(task_id, content=task_name, due=TODAY, project_id=indicator_project_id)
             else:
                 task.delete()
 
     if not priority_task_found:
-        api.items.add(task_name, due=TODAY, project_id=indicator_project_id)
+        new_task = api.items.add(task_name, due=TODAY, project_id=indicator_project_id)
 
     api.commit()
     
