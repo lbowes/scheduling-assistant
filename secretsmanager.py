@@ -21,7 +21,7 @@ class SecretsManager:
             error_code = e.response['Error']['Code'] 
             
             if error_code == 'AccessDeniedException':
-                print(str(e.reponse))
+                print(str(e.response))
                 raise e
             if error_code == 'DecryptionFailureException':
                 # Secrets Manager can't decrypt the protected secret text using the provided KMS key.
