@@ -35,48 +35,14 @@ def run() -> None:
     process_output(future_alloc, target_activity_names)
 
 
-def get_current_time_spent_s(since: datetime) -> Dict[str, int]:
-    data = {
-        'workspace_id': TOGGL_WORKSPACE_ID,
-        'since': since
-    }
-
-    current_time_spent_s = {}
-
-    time_entries = TOGGL.getDetailedReportPages(data=data)['data']
-
-    # Get completed time entries
-    for e in time_entries:
-        duration_s = int(e['dur'] / 1000)
-
-        project = e['project']
-        if project:
-            current_time_spent_s[project] = current_time_spent_s.get(project, 0) + duration_s
-
-    # Get currently running time entry if there is one
-    current_time_entry = TOGGL.request("https://api.track.toggl.com/api/v8/time_entries/current")['data']
-
-    if current_time_entry:
-        pid = current_time_entry['pid']
-        project = TOGGL.request(f"https://api.track.toggl.com/api/v8/projects/{pid}")
-        
-        current_entry_start = datetime.fromisoformat(current_time_entry['start'])
-        duration = datetime.now().astimezone() - max(since.astimezone(), current_entry_start)
-
-        project_name = project['data']['name']
-        current_time_spent_s[project_name] = current_time_spent_s.get(project_name, 0) + duration.total_seconds()
-
-    return current_time_spent_s
-
-
 def get_target_alloc_scores() -> Dict[str, any]:
     # Try to authorize the service account using local config file
-    #try:
-    #    gs = gspread.service_account()
-    #except:
+    try:
+        gs = gspread.service_account()
+    except:
         # https://stackoverflow.com/questions/41369993/modify-google-sheet-from-aws-lambda
-    credentials = json.loads(sm.get_secret("gspreadCredentials"))
-    gs = gspread.service_account_from_dict(credentials)
+        credentials = json.loads(sm.get_secret("gspreadCredentials"))
+        gs = gspread.service_account_from_dict(credentials)
 
     spreadsheet_name = sm.get_secret("SchedAssistInputSpreadsheetName")
     config_worksheet = gs.open(spreadsheet_name).sheet1
@@ -130,6 +96,40 @@ def get_target_alloc_scores() -> Dict[str, any]:
     target_alloc_scores = dict(zip(activity_names, activity_scores))
 
     return target_alloc_scores
+
+
+def get_current_time_spent_s(since: datetime) -> Dict[str, int]:
+    data = {
+        'workspace_id': TOGGL_WORKSPACE_ID,
+        'since': since
+    }
+
+    current_time_spent_s = {}
+
+    time_entries = TOGGL.getDetailedReportPages(data=data)['data']
+
+    # Get completed time entries
+    for e in time_entries:
+        duration_s = int(e['dur'] / 1000)
+
+        project = e['project']
+        if project:
+            current_time_spent_s[project] = current_time_spent_s.get(project, 0) + duration_s
+
+    # Get currently running time entry if there is one
+    current_time_entry = TOGGL.request("https://api.track.toggl.com/api/v8/time_entries/current")['data']
+
+    if current_time_entry:
+        pid = current_time_entry['pid']
+        project = TOGGL.request(f"https://api.track.toggl.com/api/v8/projects/{pid}")
+        
+        current_entry_start = datetime.fromisoformat(current_time_entry['start'])
+        duration = datetime.now().astimezone() - max(since.astimezone(), current_entry_start)
+
+        project_name = project['data']['name']
+        current_time_spent_s[project_name] = current_time_spent_s.get(project_name, 0) + duration.total_seconds()
+
+    return current_time_spent_s
 
 
 def process_output(future_alloc: Dict[str, any], target_activity_names: List[str]) -> None:
