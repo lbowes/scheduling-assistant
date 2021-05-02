@@ -242,7 +242,7 @@ def upload_future_alloc_to_todoist(future_alloc: Dict[str, any]):
 
     try:
         api.commit()
-    except SyncError:
+    except api.SyncError:
         print("Error syncing with Todoist, clearing all generated tasks...")
 
         for task in tasks:
