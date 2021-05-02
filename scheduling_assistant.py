@@ -3,6 +3,7 @@ from datetime import datetime
 from secretsmanager import SecretsManager
 
 import os
+import math
 import json 
 import gspread 
 import todoist 
@@ -161,7 +162,7 @@ def update_toggl_projects(target_activity_names: List[str]):
 def duration_str(seconds: int):
     """Converts a number of seconds into a string describing an equivalent duration in hours and minutes."""
     hours, remaining_seconds = divmod(seconds, 3600)
-    mins = round(remaining_seconds / 60.0)
+    mins = math.floor(remaining_seconds / 60.0)
 
     duration_str = "{}h".format(int(hours))
 
