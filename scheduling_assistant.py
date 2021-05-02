@@ -205,47 +205,34 @@ def upload_future_alloc_to_todoist(future_alloc: Dict[str, any]) -> None:
     PROJECT_NAME = "Scheduling Assistant"
     indicator_project_id = next((proj['id'] for proj in projects if proj['name'] == PROJECT_NAME), None)
 
+    # If we don't have a project to store generated output, create one here
     if not indicator_project_id:
         indicator_project_id = api.projects.add(PROJECT_NAME)['id']
 
-    # Work out what the priority activity is
+    tasks = filter(lambda task: task['project_id'] == indicator_project_id, api.state['items'])
+
+    # Clear all tasks attached to the output project
+    for t in tasks:
+        t.delete()
+
     allocation = future_alloc['allocation']
-    priority = max(allocation, key=allocation.get)
 
-    task_name = priority
+    # As long as there is a target allocation to output
+    if allocation:
+        # Determine the top priority task
+        priority = max(allocation, key=allocation.get)
+        task_name = priority
 
-    # ...and how much time is required on it
-    min_required_time_s = future_alloc.get('min_required_time_s')
-    if min_required_time_s:
-        req_time_s = allocation[priority] * min_required_time_s
-        task_name += " (" + duration_str(req_time_s) + ")"
+        # ...and how much time is required on it
+        min_required_time_s = future_alloc.get('min_required_time_s')
+        if min_required_time_s:
+            req_time_s = allocation[priority] * min_required_time_s
+            task_name += " (" + duration_str(req_time_s) + ")"
 
-    # Remove any existing tasks added by this application
-    priority_task_found = False
-    TODAY = { "string": "today" }
+        # before adding it to Todoist
+        new_task = api.items.add(task_name, due={"string": "today"}, project_id=indicator_project_id)
 
-    tasks = api.state['items']
-
-    for task in tasks:
-        if task['project_id'] == indicator_project_id:
-            if not priority_task_found and task['content'].startswith(priority):
-                priority_task_found = True
-
-                api.items.update(task['id'], content=task_name, due=TODAY, project_id=indicator_project_id)
-            else:
-                task.delete()
-
-    if not priority_task_found:
-        new_task = api.items.add(task_name, due=TODAY, project_id=indicator_project_id)
-
-    try:
-        api.commit()
-    except api.SyncError:
-        print("Error syncing with Todoist, clearing all generated tasks...")
-
-        for task in tasks:
-            if task['project_id'] == indicator_project_id:
-                task.delete()
+    api.commit()
     
 
 if __name__ == '__main__':
