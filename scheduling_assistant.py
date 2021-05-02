@@ -181,7 +181,7 @@ def update_toggl_projects(target_activity_names: List[str]):
         TOGGL.postRequest(TOGGL_API_BASE_URL + "projects", parameters=data)
 
 
-def duration_str(seconds: int):
+def duration_str(seconds: int) -> None:
     """Converts a number of seconds into a string describing an equivalent duration in hours and minutes."""
     hours, remaining_seconds = divmod(seconds, 3600)
     mins = math.floor(remaining_seconds / 60.0)
@@ -194,7 +194,7 @@ def duration_str(seconds: int):
     return duration_str
 
 
-def upload_future_alloc_to_todoist(future_alloc: Dict[str, any]):
+def upload_future_alloc_to_todoist(future_alloc: Dict[str, any]) -> None:
     todoist_api_cache = os.environ.get('TODOIST_API_CACHE', '~/.todoist-sync')
     api = todoist.TodoistAPI(sm.get_secret("TodoistAPIToken"), cache=todoist_api_cache)
     api.sync()
