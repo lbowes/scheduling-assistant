@@ -231,10 +231,8 @@ def upload_future_alloc_to_todoist(future_alloc: Dict[str, any]):
             if not priority_task_found and task['content'].startswith(priority):
                 priority_task_found = True
 
-                print("Updating task '" + task_name + "...")
                 api.items.update(task['id'], content=task_name, due=TODAY, project_id=indicator_project_id)
             else:
-                print("Deleting task '" + task['content'] + "...")
                 task.delete()
 
     if not priority_task_found:
