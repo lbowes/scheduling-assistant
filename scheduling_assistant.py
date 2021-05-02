@@ -135,16 +135,39 @@ def get_current_time_spent_s(since: datetime) -> Dict[str, int]:
 
 def process_output(future_alloc: Dict[str, any], target_activity_names: List[str]) -> None:
     update_toggl_projects(target_activity_names)
-    upload_future_alloc_to_todoist(future_alloc, target_activity_names)
+    upload_future_alloc_to_todoist(future_alloc)
 
 
 def update_toggl_projects(target_activity_names: List[str]):
-    """Make sure all activities in the target set are available on Toggl."""
+    """Make sure that all activities in the target set are available on Toggl, and any previously generated projects not
+    used are deleted."""
+
+    TOGGL_API_BASE_URL = "https://www.toggl.com/api/v8/"
 
     # Get a list of current Toggl projects
-    projects = TOGGL.request(f"https://www.toggl.com/api/v8/workspaces/{TOGGL_WORKSPACE_ID}/projects")
-    current_project_names = [p['name'] for p in projects] if projects else []
+    current_projects = TOGGL.request(TOGGL_API_BASE_URL + f"workspaces/{TOGGL_WORKSPACE_ID}/projects")
+    current_projects_names = []
 
+    MARKER = "[SA]"
+    target_activity_project_names = [t + " " + MARKER for t in target_activity_names]
+
+    if current_projects:
+        # Delete batch of old generated projects
+        pids_to_delete = []
+
+        for proj in current_projects:
+            name = proj['name']
+            if name.endswith(MARKER) and name not in target_activity_project_names:
+                # A project that was generated previously, but is no longer a priority
+                pids_to_delete.append(proj['id'])
+
+        if pids_to_delete:
+            pids_to_delete_as_str = ','.join([str(pid) for pid in pids_to_delete])
+            TOGGL.postRequest(TOGGL_API_BASE_URL + f"projects/{pids_to_delete_as_str}", method='DELETE')
+
+        current_project_names = [p['name'] for p in current_projects]
+
+    # Add any new projects
     data = { 
         "project": { 
             "name": "", 
@@ -153,10 +176,9 @@ def update_toggl_projects(target_activity_names: List[str]):
         }
     }
 
-    # Add any target activities that are not already projects
-    for new_project in list(set(target_activity_names) - set(current_project_names)):
+    for new_project in list(set(target_activity_project_names) - set(current_project_names)):
         data['project']['name'] = new_project
-        TOGGL.postRequest("https://www.toggl.com/api/v8/projects", parameters=data)
+        TOGGL.postRequest(TOGGL_API_BASE_URL + "projects", parameters=data)
 
 
 def duration_str(seconds: int):
@@ -172,7 +194,7 @@ def duration_str(seconds: int):
     return duration_str
 
 
-def upload_future_alloc_to_todoist(future_alloc: Dict[str, any], target_activity_names: List[str]):
+def upload_future_alloc_to_todoist(future_alloc: Dict[str, any]):
     todoist_api_cache = os.environ.get('TODOIST_API_CACHE', '~/.todoist-sync')
     api = todoist.TodoistAPI(sm.get_secret("TodoistAPIToken"), cache=todoist_api_cache)
     api.sync()
@@ -202,20 +224,30 @@ def upload_future_alloc_to_todoist(future_alloc: Dict[str, any], target_activity
     priority_task_found = False
     TODAY = { "string": "today" }
 
-    for task in api.state['items']:
+    tasks = api.state['items']
+
+    for task in tasks:
         if task['project_id'] == indicator_project_id:
             if not priority_task_found and task['content'].startswith(priority):
                 priority_task_found = True
 
-                task_id = task['id']
-                api.items.update(task_id, content=task_name, due=TODAY, project_id=indicator_project_id)
+                print("Updating task '" + task_name + "...")
+                api.items.update(task['id'], content=task_name, due=TODAY, project_id=indicator_project_id)
             else:
+                print("Deleting task '" + task['content'] + "...")
                 task.delete()
 
     if not priority_task_found:
         new_task = api.items.add(task_name, due=TODAY, project_id=indicator_project_id)
 
-    api.commit()
+    try:
+        api.commit()
+    except SyncError:
+        print("Error syncing with Todoist, clearing all generated tasks...")
+
+        for task in tasks:
+            if task['project_id'] == indicator_project_id:
+                task.delete()
     
 
 if __name__ == '__main__':
