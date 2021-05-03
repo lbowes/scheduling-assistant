@@ -121,14 +121,16 @@ def get_current_time_spent_s(since: datetime) -> Dict[str, int]:
     current_time_entry = TOGGL.request("https://api.track.toggl.com/api/v8/time_entries/current")['data']
 
     if current_time_entry:
-        pid = current_time_entry['pid']
-        project = TOGGL.request(f"https://api.track.toggl.com/api/v8/projects/{pid}")
-        
-        current_entry_start = datetime.fromisoformat(current_time_entry['start'])
-        duration = datetime.now().astimezone() - max(since.astimezone(), current_entry_start)
+        project_id = current_time_entry.get('pid', None)
 
-        project_name = project['data']['name']
-        current_time_spent_s[project_name] = current_time_spent_s.get(project_name, 0) + duration.total_seconds()
+        if project_id:
+            project = TOGGL.request(f"https://api.track.toggl.com/api/v8/projects/{project_id}")
+            
+            current_entry_start = datetime.fromisoformat(current_time_entry['start'])
+            duration = datetime.now().astimezone() - max(since.astimezone(), current_entry_start)
+
+            project_name = project['data']['name']
+            current_time_spent_s[project_name] = current_time_spent_s.get(project_name, 0) + duration.total_seconds()
 
     return current_time_spent_s
 
@@ -142,14 +144,30 @@ def update_toggl_projects(target_activity_names: List[str]):
     """Make sure that all activities in the target set are available on Toggl, and any previously generated projects not
     used are deleted."""
 
+    clients = TOGGL.request("https://api.track.toggl.com/api/v8/clients")
+    SA_CLIENT_NAME = "SchedulingAssistant"
+
+    sa_client_id = None
+
+    if clients:
+        sa_client_id = next((client['id'] for client in clients if client['name'] == SA_CLIENT_NAME), None)
+
+    # If the scheduling asssistant client doesn't exist yet, we need to make one
+    if not sa_client_id:
+        data = {
+            "client": {
+                "name": SA_CLIENT_NAME,
+                "wid": TOGGL_WORKSPACE_ID
+            }
+        }
+
+        sa_client_id = TOGGL.postRequest("https://api.track.toggl.com/api/v8/clients", parameters=data)["data"]["id"]
+
     TOGGL_API_BASE_URL = "https://www.toggl.com/api/v8/"
 
-    # Get a list of current Toggl projects
-    current_projects = TOGGL.request(TOGGL_API_BASE_URL + f"workspaces/{TOGGL_WORKSPACE_ID}/projects")
-    current_projects_names = []
-
-    MARKER = "[SA]"
-    target_activity_project_names = [t + " " + MARKER for t in target_activity_names]
+    # Get a list of current Toggl projects bound to the SA client
+    current_projects = TOGGL.request(f"https://api.track.toggl.com/api/v8/clients/{sa_client_id}/projects")
+    current_project_names = []
 
     if current_projects:
         # Delete batch of old generated projects
@@ -157,7 +175,9 @@ def update_toggl_projects(target_activity_names: List[str]):
 
         for proj in current_projects:
             name = proj['name']
-            if name.endswith(MARKER) and name not in target_activity_project_names:
+            client_id = proj.get('cid', None)
+
+            if client_id and client_id == sa_client_id and name not in target_activity_names:
                 # A project that was generated previously, but is no longer a priority
                 pids_to_delete.append(proj['id'])
 
@@ -172,11 +192,12 @@ def update_toggl_projects(target_activity_names: List[str]):
         "project": { 
             "name": "", 
             "wid": TOGGL_WORKSPACE_ID, 
-            "is_private": True 
+            "cid": sa_client_id,
+            "is_private": True
         }
     }
 
-    for new_project in list(set(target_activity_project_names) - set(current_project_names)):
+    for new_project in list(set(target_activity_names) - set(current_project_names)):
         data['project']['name'] = new_project
         TOGGL.postRequest(TOGGL_API_BASE_URL + "projects", parameters=data)
 
@@ -195,31 +216,48 @@ def duration_str(seconds: int) -> None:
 
 
 def upload_future_alloc_to_todoist(future_alloc: Dict[str, any]) -> None:
+    """Adds a set of highest priority activities to Todoist as tasks."""
     todoist_api_cache = os.environ.get('TODOIST_API_CACHE', '~/.todoist-sync')
     api = todoist.TodoistAPI(sm.get_secret("TodoistAPIToken"), cache=todoist_api_cache)
     api.sync()
 
-    # Get list of current Todoist projects
     projects = api.state['projects']
-   
     PROJECT_NAME = "Scheduling Assistant"
-    indicator_project_id = next((proj['id'] for proj in projects if proj['name'] == PROJECT_NAME), None)
+    output_project_id = None
 
-    # If we don't have a project to store generated output, create one here
-    if not indicator_project_id:
-        indicator_project_id = api.projects.add(PROJECT_NAME)['id']
+    # If there are projects on Todoist...
+    if projects:
+        # collect a list of the ids of those with a name that matches the output project name
+        matching_ids = []
+        for proj in projects:
+            if proj['name'] == PROJECT_NAME:
+                matching_ids.append(proj['id'])
 
-    tasks = filter(lambda task: task['project_id'] == indicator_project_id, api.state['items'])
+        # If we find more than one matching project, delete them all
+        if len(matching_ids) > 1:
+            for proj_id in matching_ids:
+                api.projects.get_by_id(proj_id).delete()
 
-    # Clear all tasks attached to the output project
-    for t in tasks:
-        t.delete()
+        # If we find exactly one matching project, use this one to add tasks in future
+        elif len(matching_ids) == 1:
+            output_project_id = matching_ids[0]
+
+    # If no output project could be found
+    if not output_project_id:
+        # then we create one here
+        output_project_id = api.projects.add(PROJECT_NAME)['id']
+    else:
+        # otherwise, remove any existing tasks belonging to this project
+        existing_tasks = filter(lambda task: task['project_id'] == output_project_id, api.state['items'])
+
+        for t in existing_tasks:
+            t.delete()
 
     allocation = future_alloc['allocation']
 
-    # As long as there is a target allocation to output
+    # As long as there are tasks to upload...
     if allocation:
-        # Determine the top priority task
+        # determine the top priority task
         priority = max(allocation, key=allocation.get)
         task_name = priority
 
@@ -230,7 +268,7 @@ def upload_future_alloc_to_todoist(future_alloc: Dict[str, any]) -> None:
             task_name += " (" + duration_str(req_time_s) + ")"
 
         # before adding it to Todoist
-        new_task = api.items.add(task_name, due={"string": "today"}, project_id=indicator_project_id)
+        new_task = api.items.add(task_name, due={"string": "today"}, project_id=output_project_id)
 
     api.commit()
     
