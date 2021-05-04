@@ -260,8 +260,9 @@ def upload_future_alloc_to_todoist(future_alloc: Dict[str, any]) -> None:
 
     # As long as there are tasks to upload...
     if allocation:
-        # determine the top priority task
-        priority = max(allocation, key=allocation.get)
+        # this gets the next task we should allocate time to
+        priority = min(allocation, key=allocation.get)
+
         task_name = priority
 
         # ...and how much time is required on it
