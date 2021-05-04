@@ -22,11 +22,10 @@ TOGGL_WORKSPACE_ID = TOGGL.getWorkspace(name=sm.get_secret("TogglWorkspaceName")
 
 def run() -> None:
     print("Reading input configuration spreadsheet...")
-    target_alloc_scores = get_target_alloc_scores()
+    target_alloc_scores, since = get_input_config()
 
-    ref_date = datetime(2021, 1, 1)
     print("Fetching current time allocation...")
-    current_time_spent_s = get_current_time_spent_s(since=ref_date)
+    current_time_spent_s = get_current_time_spent_s(since)
 
     print("Calculating required future time allocation...")
     future_alloc = calc_future_alloc(current_time_spent_s, target_alloc_scores)
@@ -36,7 +35,7 @@ def run() -> None:
     process_output(future_alloc, target_activity_names)
 
 
-def get_target_alloc_scores() -> Dict[str, any]:
+def get_input_config() -> Dict[str, any]:
     # Try to authorize the service account using local config file
     try:
         gs = gspread.service_account()
@@ -53,19 +52,24 @@ def get_target_alloc_scores() -> Dict[str, any]:
     num_rows = len(cells)
     num_cols = len(cells[0])
 
+    since = None
     activity_header_coords = None
     score_header_coords = None
 
     for row in range(num_rows):
         for col in range(num_cols):
             value = cells[row][col]
-
             coords = (row, col)
 
-            if value == "Activity":
+            if value == "Since" and col < num_cols - 1:
+                since = datetime.strptime(cells[row][col + 1], "%d/%m/%Y")
+            elif value == "Activity":
                 activity_header_coords = coords
             elif value == "Score":
                 score_header_coords = coords
+
+    if not since:
+        print("Could not find reference date") 
 
     if not activity_header_coords:
         print("Could not find activity name data") 
@@ -73,7 +77,7 @@ def get_target_alloc_scores() -> Dict[str, any]:
     if not score_header_coords:
         print("Could not find activity score data") 
 
-    if not (activity_header_coords and score_header_coords):
+    if not (since and activity_header_coords and score_header_coords):
         raise ValueError("Incomplete input provided.")
         return
 
@@ -96,7 +100,7 @@ def get_target_alloc_scores() -> Dict[str, any]:
     # Extract the target allocation of time between activities
     target_alloc_scores = dict(zip(activity_names, activity_scores))
 
-    return target_alloc_scores
+    return target_alloc_scores, since
 
 
 def get_current_time_spent_s(since: datetime) -> Dict[str, int]:
