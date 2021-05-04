@@ -211,7 +211,10 @@ def duration_str(seconds: int) -> None:
     hours, remaining_seconds = divmod(seconds, 3600)
     mins = math.floor(remaining_seconds / 60.0)
 
-    duration_str = "{}h".format(int(hours))
+    duration_str = ""
+
+    if hours:
+        duration_str = "{}h".format(int(hours))
 
     if mins:
         duration_str += " {}m".format(mins)
