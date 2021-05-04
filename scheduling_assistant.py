@@ -211,15 +211,11 @@ def duration_str(seconds: int) -> None:
     hours, remaining_seconds = divmod(seconds, 3600)
     mins = math.floor(remaining_seconds / 60.0)
 
-    duration_str = ""
+    hours = (str(int(hours)) + "h") if hours else ""
+    mins = (str(mins) + "m") if mins else ""
+    spacing = " " if (hours and mins) else ""
 
-    if hours:
-        duration_str = "{}h".format(int(hours))
-
-    if mins:
-        duration_str += " {}m".format(mins)
-
-    return duration_str
+    return f"{hours}{spacing}{mins}"
 
 
 def upload_future_alloc_to_todoist(future_alloc: Dict[str, any]) -> None:
