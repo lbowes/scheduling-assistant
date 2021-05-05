@@ -260,19 +260,22 @@ def upload_future_alloc_to_todoist(future_alloc: Dict[str, any]) -> None:
 
     # As long as there are tasks to upload...
     if allocation:
-        # this gets the next task we should allocate time to
-        priority = min(allocation, key=allocation.get)
+        priority = max(allocation, key=allocation.get)
 
-        task_name = priority
+        for activity, alloc in allocation.items():
+            # ...and how much time is required on it
+            task_name = activity
 
-        # ...and how much time is required on it
-        min_required_time_s = future_alloc.get('min_required_time_s')
-        if min_required_time_s:
-            req_time_s = allocation[priority] * min_required_time_s
-            task_name += " (" + duration_str(req_time_s) + ")"
+            min_required_time_s = future_alloc.get('min_required_time_s')
+            if min_required_time_s:
+                req_time_s = alloc * min_required_time_s
+                duration_label = duration_str(req_time_s)
 
-        # before adding it to Todoist
-        new_task = api.items.add(task_name, due={"string": "today"}, project_id=output_project_id)
+                if duration_label:
+                    task_name += " (" + duration_label + ")"
+
+            # before adding it to Todoist
+            new_task = api.items.add(task_name, due={"string": "today"}, project_id=output_project_id)
 
     api.commit()
     
