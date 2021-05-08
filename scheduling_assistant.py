@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict, List, Tuple
 from datetime import datetime
 from secretsmanager import SecretsManager
 
@@ -9,7 +9,7 @@ import gspread
 import todoist 
 from toggl.TogglPy import Toggl
 
-from logic import calc_future_alloc
+from logic import prioritize
 
 
 sm = SecretsManager(region='eu-west-2')
@@ -22,17 +22,18 @@ TOGGL_WORKSPACE_ID = TOGGL.getWorkspace(name=sm.get_secret("TogglWorkspaceName")
 
 def run() -> None:
     print("Reading input configuration spreadsheet...")
-    target_alloc_scores, since = get_input_config()
+    goal, since = get_input_config()
 
     print("Fetching current time allocation...")
-    current_time_spent_s = get_current_time_spent_s(since)
+    history = get_event_history(since)
+    print("history: " + str(history))
 
     print("Calculating required future time allocation...")
-    future_alloc = calc_future_alloc(current_time_spent_s, target_alloc_scores)
+    future = prioritize(goal, history)
     
-    target_activity_names = list(target_alloc_scores.keys())
+    goal_activity_names = list(goal.keys())
     print("Writing output...")
-    process_output(future_alloc, target_activity_names)
+    process_output(future, goal_activity_names)
 
 
 def get_input_config() -> Dict[str, any]:
@@ -84,7 +85,6 @@ def get_input_config() -> Dict[str, any]:
     activity_names = []
     activity_scores = []
 
-    # Iterate through each activity
     start_activity_row = activity_header_coords[0] + 1
     start_score_row = score_header_coords[0] + 1
 
@@ -97,21 +97,22 @@ def get_input_config() -> Dict[str, any]:
             score = cells[start_score_row + i][score_header_coords[1]]
             activity_scores.append(int(score) if score else 0)
 
-    # Extract the target allocation of time between activities
     target_alloc_scores = dict(zip(activity_names, activity_scores))
 
     return target_alloc_scores, since
 
 
-def get_current_time_spent_s(since: datetime) -> Dict[str, int]:
+def get_event_history(since: datetime) -> List[Tuple[str, int]]:
     data = {
         'workspace_id': TOGGL_WORKSPACE_ID,
         'since': since
     }
 
-    current_time_spent_s = {}
+    events = []
 
     time_entries = TOGGL.getDetailedReportPages(data=data)['data']
+
+    unsorted_time_entries = []
 
     # Get completed time entries
     for e in time_entries:
@@ -119,7 +120,10 @@ def get_current_time_spent_s(since: datetime) -> Dict[str, int]:
 
         project = e['project']
         if project:
-            current_time_spent_s[project] = current_time_spent_s.get(project, 0) + duration_s
+            unsorted_time_entries.append((project, duration_s, e['start']))
+    
+    for u in sorted(unsorted_time_entries, key=lambda x: x[2]):
+        events.append((u[0], u[1]))
 
     # Get currently running time entry if there is one
     current_time_entry = TOGGL.request("https://api.track.toggl.com/api/v8/time_entries/current")['data']
@@ -134,13 +138,13 @@ def get_current_time_spent_s(since: datetime) -> Dict[str, int]:
             duration = datetime.now().astimezone() - max(since.astimezone(), current_entry_start)
 
             project_name = project['data']['name']
-            current_time_spent_s[project_name] = current_time_spent_s.get(project_name, 0) + duration.total_seconds()
+            events.append((project_name, duration.total_seconds()))
 
-    return current_time_spent_s
+    return events
 
 
-def process_output(future_alloc: Dict[str, any], target_activity_names: List[str]) -> None:
-    update_toggl_projects(target_activity_names)
+def process_output(future_alloc: List[Tuple[str, int]], goal_activity_names: List[str]) -> None:
+    update_toggl_projects(goal_activity_names)
     upload_future_alloc_to_todoist(future_alloc)
 
 
@@ -218,7 +222,7 @@ def duration_str(seconds: int) -> None:
     return f"{hours}{spacing}{mins}"
 
 
-def upload_future_alloc_to_todoist(future_alloc: Dict[str, any]) -> None:
+def upload_future_alloc_to_todoist(future_alloc: List[Tuple[str, int]]) -> None:
     """Adds a set of highest priority activities to Todoist as tasks."""
     todoist_api_cache = os.environ.get('TODOIST_API_CACHE', '~/.todoist-sync')
     api = todoist.TodoistAPI(sm.get_secret("TodoistAPIToken"), cache=todoist_api_cache)
@@ -256,26 +260,16 @@ def upload_future_alloc_to_todoist(future_alloc: Dict[str, any]) -> None:
         for t in existing_tasks:
             t.delete()
 
-    allocation = future_alloc['allocation']
+    if future_alloc:
+        priority, time_req_s = future_alloc[0]
 
-    # As long as there are tasks to upload...
-    if allocation:
-        priority = max(allocation, key=allocation.get)
+        if time_req_s:
+            duration_label = duration_str(time_req_s)
 
-        for activity, alloc in allocation.items():
-            # ...and how much time is required on it
-            task_name = activity
+            if duration_label:
+                priority += " (" + duration_label + ")"
 
-            min_required_time_s = future_alloc.get('min_required_time_s')
-            if min_required_time_s:
-                req_time_s = alloc * min_required_time_s
-                duration_label = duration_str(req_time_s)
-
-                if duration_label:
-                    task_name += " (" + duration_label + ")"
-
-            # before adding it to Todoist
-            new_task = api.items.add(task_name, due={"string": "today"}, project_id=output_project_id)
+        new_task = api.items.add(priority, due={"string": "today"}, project_id=output_project_id)
 
     api.commit()
     

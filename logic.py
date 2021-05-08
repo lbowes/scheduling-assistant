@@ -1,48 +1,51 @@
-from typing import List, Dict
+from typing import List, Dict, Tuple
+from itertools import cycle
 
 
-def calc_future_alloc(current_time_spent_s: Dict[str, int], target_alloc_scores: Dict[str, int]) -> Dict[str, any]:
-    """Calculate the percentage allocation of future time between a set of activities, given a target allocation between
-    them and the current amount of time spent on each."""
-    total_score = sum(target_alloc_scores.values())
-    target_alloc = { act: float(score) / total_score for act, score in target_alloc_scores.items() if score > 0 }
+def prioritize(goal: Dict[str, int], past: List[Tuple[str, int]]) -> None:
+    if not goal:
+        return None
 
-    future_alloc = { "allocation": target_alloc }
+    sorted_activities = [name for name, score in sorted(goal.items(), key=lambda x: x[1], reverse=True)]
+    activity_cycle = cycle(sorted_activities)
 
-    if not current_time_spent_s:
-        return future_alloc
+    total_score = sum(goal.values())
+    goal_percent  = { act: float(score) / total_score for act, score in goal.items() if score > 0 }
 
-    for target_act in target_alloc:
-        if target_act not in current_time_spent_s:
-            current_time_spent_s[target_act] = 0
+    activity_names = goal.keys()
+    current_time_spent_s = dict.fromkeys(activity_names, 0)
+    time_required_s = dict.fromkeys(activity_names, 0)
+    total_time_s = 0
+    priority = next(activity_cycle)
 
-    relevant_time_spent_s = sum(current_time_spent_s[act] for act in target_alloc)
+    if past:
+        for activity, dur_s in past:
+            if activity not in goal:
+                continue
 
-    time_required_s = 0
+            current_time_spent_s[activity] += dur_s
+            total_time_s += dur_s
 
-    for act, target in target_alloc.items():
-        required_time_s = (current_time_spent_s[act] / target_alloc[act]) - relevant_time_spent_s
+            alloc = { act: max((time_s / total_time_s) - goal_percent[act], 0) for act, time_s in current_time_spent_s.items() }
+            completed_act = max(alloc, key=alloc.get)
 
-        if required_time_s > time_required_s:
-            time_required_s = required_time_s
+            if current_time_spent_s[priority] > time_required_s[priority]:
+                priority = next(activity_cycle)
 
-    if time_required_s <= 0:
-        return future_alloc
+            for act, time_spent_s in current_time_spent_s.items():
+                future_time_spent_s = current_time_spent_s[completed_act] * (goal_percent[act] / goal_percent[completed_act])
+                time_required_s[act] = abs(future_time_spent_s - time_spent_s)
 
-    future_alloc["min_required_time_s"] = time_required_s
-    future_alloc["allocation"] = {}
+        if time_required_s[priority] == 0:
+            priority = next(activity_cycle)
 
-    total_time_s = relevant_time_spent_s + time_required_s
+    output = []
 
-    for act, target in target_alloc.items():
-        target_alloc[act]
-        total_time_s
-        current_time_spent_s[act]
-        time_required_s
+    start_idx = sorted_activities.index(priority)
+    num_activities = len(goal)
+    for i in range(num_activities):
+        activity = sorted_activities[(start_idx + i) % num_activities]
 
-        allocation = (target_alloc[act] * total_time_s - current_time_spent_s[act]) / time_required_s
+        output.append((activity, time_required_s[activity]))
 
-        if allocation:
-            future_alloc["allocation"][act] = allocation
-
-    return future_alloc
+    return output
